@@ -1,0 +1,270 @@
+function updateJuly() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sourceSpreadsheetId = '1VOdQ9RC7kIwGTStMwSOvWplpjA5SN8WLn5jrw0skuMs';
+  const sourceSheets = [
+    { name: 'United States', region: 'US' },
+    { name: 'Australia & New Zealand', region: 'ANZ' }
+  ];
+  const panelSheetName = "Zanepanel";
+
+  const panelSheet = ss.getSheetByName(panelSheetName);
+  if (!panelSheet) {
+    throw new Error(panelSheetName + " sheet does not exist. Please generate it first.");
+  }
+
+  // 清除筛选器
+  if (panelSheet.getFilter()) {
+    panelSheet.getFilter().remove();
+  }
+
+  const panelData = panelSheet.getDataRange().getValues();
+  const panelHeaders = panelData[0];
+  const panelRows = panelData.slice(1);
+
+  const panelMap = new Map();
+  panelRows.forEach(row => {
+    const reportNumber = row[panelHeaders.indexOf("Report_Number")];
+    panelMap.set(reportNumber, row);
+  });
+
+  const sourceSs = SpreadsheetApp.openById(sourceSpreadsheetId);
+  const newData = [];
+  const newReportNumbers = new Set();
+
+  // 处理每个区域的数据
+  sourceSheets.forEach(({ name, region }) => {
+    const sourceSheet = sourceSs.getSheetByName(name);
+    const lastRow = sourceSheet.getLastRow();
+    const data = sourceSheet.getRange(`A2:M${lastRow}`).getValues();
+
+    data.forEach(row => {
+      const reportNumber = row[data[0].indexOf("Report_Number")];
+      const newRow = [region, ...row];
+      newData.push({ reportNumber, newRow });
+      newReportNumbers.add(reportNumber);
+    });
+  });
+
+  const updatedData = [];
+
+  panelRows.forEach(row => {
+    const reportNumber = row[panelHeaders.indexOf("Report_Number")];
+    if (newReportNumbers.has(reportNumber)) {
+      updatedData.push(row);
+      newReportNumbers.delete(reportNumber);
+    }
+  });
+
+  newData.forEach(item => {
+    if (!panelMap.has(item.reportNumber)) {
+      const newRow = new Array(panelHeaders.length).fill('');
+      newRow.splice(0, item.newRow.length, ...item.newRow);
+      updatedData.push(newRow);
+    }
+  });
+
+
+  const noteIndex = panelHeaders.indexOf("Note");
+  const remarksIndex = panelHeaders.indexOf("update date");
+  const threadsIndex = panelHeaders.indexOf("Neweast thread");
+  const daterIndex = panelHeaders.indexOf("receive date");
+  const countsIndex = panelHeaders.indexOf("emails count");
+
+
+  const notesMap = new Map();
+  const remarksMap = new Map();
+  const threadsMap = new Map();
+  const daterMap = new Map();
+  const countsMap = new Map();  
+  panelRows.forEach(row => {
+    const reportNumber = row[panelHeaders.indexOf("Report_Number")];
+    notesMap.set(reportNumber, row[noteIndex]);
+    remarksMap.set(reportNumber, row[remarksIndex]);
+    threadsMap.set(reportNumber, row[threadsIndex]);
+    daterMap.set(reportNumber, row[daterIndex]);
+    countsMap.set(reportNumber, row[countsIndex]);
+  });
+
+
+  panelSheet.clear();
+  panelSheet.appendRow(panelHeaders);
+  panelSheet.getRange(2, 1, updatedData.length, panelHeaders.length).setValues(updatedData);
+
+  const lastRowPanel = panelSheet.getLastRow(); // Get last row of the panel sheet AFTER update
+
+  for (let i = 2; i <= lastRowPanel; i++) { // Use lastRowPanel here
+    const reportNumber = panelSheet.getRange(i, panelHeaders.indexOf("Report_Number") + 1).getValue();
+    if (notesMap.has(reportNumber)) {
+      panelSheet.getRange(i, noteIndex + 1).setValue(notesMap.get(reportNumber));
+    }
+    if (remarksMap.has(reportNumber)) {
+      panelSheet.getRange(i, remarksIndex + 1).setValue(remarksMap.get(reportNumber));
+    }
+    // 添加其他三个字段的更新
+    if (threadsMap.has(reportNumber)) {
+      panelSheet.getRange(i, threadsIndex + 1).setValue(threadsMap.get(reportNumber));
+    }
+    if (daterMap.has(reportNumber)) {
+      panelSheet.getRange(i, daterIndex + 1).setValue(daterMap.get(reportNumber));
+    }
+    if (countsMap.has(reportNumber)) {
+      panelSheet.getRange(i, countsIndex + 1).setValue(countsMap.get(reportNumber));
+    }
+  }
+
+  // ... (Formulas and conditional formatting - NO changes needed)
+  for (let i = 2; i <= lastRowPanel; i++) { // Use lastRowPanel here as well
+    panelSheet.getRange(`O${i}`).setFormula(`=TEXT(LEFT(RIGHT(E${i},20),11),"yyyy-mm-dd")`);
+    panelSheet.getRange(`P${i}`).setFormula(`=TEXT(O${i}+N${i},"yyyy-mm-dd")`);
+    panelSheet.getRange(`Q${i}`).setFormula(`=VLOOKUP(B${i},PT!A:C,3,0)`);
+    panelSheet.getRange(`R${i}`).setFormula(`=VALUE(TEXT(IF(F${i}="USD", SUMIF(B:B,B${i},G:G), GOOGLEFINANCE("currency:"&F${i}&"USD")*SUMIF(B:B,B${i},G:G)), "#,##0.00"))`);
+    panelSheet.getRange(`S${i}`).setFormula(`=IF(AND(T${i}="-",R${i}>0),"+>-",0)`);
+    panelSheet.getRange(`T${i}`).setFormula(`=IF(COUNTIFS(B:B,B${i},G:G,"<0")>0,"-",0)`);
+    panelSheet.getRange(`U${i}`).setFormula(`=COUNTIF(B:B,B${i})`);
+    panelSheet.getRange(`V${i}`).setFormula(`=IF(Q${i}=F${i},0,"$x")`);
+    panelSheet.getRange(`W${i}`).setFormula(`=IF(J${i}="verified",1,0)`);
+    panelSheet.getRange(`X${i}`).setFormula(`=COUNTIF(HZC!A:A,B${i})`);
+    panelSheet.getRange(`Y${i}`).setFormula(`=IFERROR(VLOOKUP(B${i},'By mcht record'!G:H,2,0),"")`);
+    panelSheet.getRange(`AA${i}`).setFormula(`=IF(COUNTIFS(B:B,B${i},Z:Z,"Blocker")>0,"blck",IF(COUNTIFS(B:B,B${i},Z:Z,"Low Amount")>0,"low",0))`);
+    panelSheet.getRange(`AB${i}`).setFormula(`=IFNA(VLOOKUP(B${i},'By mcht record'!A:C,3,0),"")`);
+  }
+
+  // 设置条件格式
+  setConditionalFormatting(panelSheet);
+
+  // 隐藏特定列
+  panelSheet.hideColumn(panelSheet.getRange("E:E"));
+
+  // 隐藏第 5 到第 7 列（E 到 G 列）
+  panelSheet.hideColumns(11, 5);
+
+ function setConditionalFormatting(sheet) {
+  const lastRow = sheet.getLastRow();
+
+  // 首行格式
+  const headerRange = sheet.getRange("1:1");
+  headerRange.setBackground("#E0E4E8").setFontColor("#1A5276").setFontWeight("bold");
+
+  // I 列条件格式
+  const rangeI = sheet.getRange("I2:I" + lastRow);
+  rangeI.setFontColor(null).setBackground(null).setHorizontalAlignment("center");
+  rangeI.createTextFinder("rejected").findAll().forEach(cell => {
+    cell.setBackground("#FFFFFF").setFontColor("#922B21");
+  });
+  rangeI.createTextFinder("confirmed").findAll().forEach(cell => {
+    cell.setBackground("#FFFFFF").setFontColor("#117A65");
+  });
+
+  // S 列条件格式
+  const rangeS = sheet.getRange("S2:S" + lastRow);
+  rangeS.setFontColor(null).setBackground(null).setHorizontalAlignment("center");
+  rangeS.createTextFinder("+>-").findAll().forEach(cell => {
+    cell.setBackground("#FFFFFF").setFontColor("#117A65");
+  });
+  rangeS.createTextFinder("0").findAll().forEach(cell => {
+    cell.setBackground("#FFFFFF").setFontColor("#FFFFFF");
+  });
+
+    // Y 列条件格式
+  const rangeY = sheet.getRange("Y2:Y" + lastRow);
+  rangeS.setFontColor(null).setBackground(null).setHorizontalAlignment("center");
+  rangeS.createTextFinder("Pri").findAll().forEach(cell => {
+    cell.setBackground("#FFFFFF").setFontColor("#117A65");
+  });
+
+  // T 列条件格式
+  const rangeT = sheet.getRange("T2:T" + lastRow);
+  rangeT.setFontColor(null).setBackground(null).setHorizontalAlignment("center");
+  rangeT.createTextFinder("-").findAll().forEach(cell => {
+    cell.setBackground("#FFFFFF").setFontColor("#922B21");
+  });
+  rangeT.createTextFinder("0").findAll().forEach(cell => {
+    cell.setBackground("#FFFFFF").setFontColor("#FFFFFF");
+  });
+
+  // U 列条件格式
+  const rangeU = sheet.getRange("U2:U" + lastRow);
+  rangeU.setBackground("#FFFFFF").setFontColor("#1A5276");
+
+  // V 列条件格式
+  const rangeV = sheet.getRange("V2:V" + lastRow);
+  rangeV.setFontColor(null).setBackground(null).setHorizontalAlignment("center");
+  rangeV.createTextFinder("$x").findAll().forEach(cell => {
+    cell.setBackground("#E0E4E8").setFontColor("#2C3E50");
+  });
+  rangeV.createTextFinder("0").findAll().forEach(cell => {
+    cell.setBackground("#FFFFFF").setFontColor("#FFFFFF");
+  });
+
+  // W 列条件格式
+  const rangeW = sheet.getRange("W2:W" + lastRow);
+  rangeW.setFontColor(null).setBackground(null);
+  rangeW.createTextFinder("1").findAll().forEach(cell => {
+    cell.setBackground("#FFFFFF").setFontColor("#D1F2EB");
+  });
+  rangeW.createTextFinder("0").findAll().forEach(cell => {
+    cell.setBackground("#FFFFFF").setFontColor("#922B21");
+  });
+
+  // X 列条件格式
+  const rangeX = sheet.getRange("X2:X" + lastRow);
+  rangeX.setFontColor(null).setBackground(null).setHorizontalAlignment("center");
+  rangeX.createTextFinder("1").findAll().forEach(cell => {
+    cell.setBackground("#E0E4E8").setFontColor("#E0E4E8");
+  });
+  rangeX.createTextFinder("0").findAll().forEach(cell => {
+    cell.setBackground("#FFFFFF").setFontColor("#FFFFFF");
+  });
+
+  const rangeZ = sheet.getRange("AA2:AA" + lastRow);
+  rangeZ.setFontColor(null).setBackground(null).setHorizontalAlignment("center");
+
+  let rules = sheet.getConditionalFormatRules();
+
+  const blckRule = SpreadsheetApp.newConditionalFormatRule()
+    .whenTextContains("blck")
+    .setBackground("#1E3A5F")
+    .setFontColor("#FFFFFF")
+    .setRanges([rangeZ])
+    .build();
+
+  const laRule = SpreadsheetApp.newConditionalFormatRule()
+    .whenTextContains("low")
+    .setBackground("#b0c4de")
+    .setFontColor("#FFFFFF")
+    .setRanges([rangeZ])
+    .build();
+
+  const zeroRule = SpreadsheetApp.newConditionalFormatRule()
+    .whenTextContains("0")
+    .setBackground("#FFFFFF")
+    .setFontColor("#FFFFFF")
+    .setRanges([rangeZ])
+    .build();
+
+  rules.push(blckRule);
+  rules.push(laRule);
+  rules.push(zeroRule);
+
+  sheet.setConditionalFormatRules(rules);
+
+  // I, Z, S-X 列居中
+  sheet.getRange("I2:I" + lastRow).setHorizontalAlignment("center");
+  sheet.getRange("AA2:AA" + lastRow).setHorizontalAlignment("center");
+  sheet.getRange("S2:X" + lastRow).setHorizontalAlignment("center");
+
+    // Sort by Due on
+  panelSheet.getRange(2, 1, lastRow - 1, panelHeaders.length).sort({ column: 16, ascending: true });
+  Logger.log("Sorting by column 16, range: 2 to " + lastRow);
+}
+    if (panelSheet) {
+      // 获取当前日期和时间
+      var now = new Date();
+      var formattedDate = Utilities.formatDate(now, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
+      
+      // 将更新的日期和时间输入到"Menu"表的I9单元格
+      panelSheet.getRange("A1").setValue(formattedDate);
+    } else {
+      Logger.log("工作表 'panelSheet' 不存在。");
+    }
+  }
